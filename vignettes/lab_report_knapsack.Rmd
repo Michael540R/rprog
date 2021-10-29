@@ -1,0 +1,189 @@
+---
+title: "Lab Report Knapsack"
+author: "Kevin Duvert, Michael Nilsson"
+output: pdf_document
+vignette: >
+  %\VignetteIndexEntry{Lab Report Knapsack}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+\vspace{5mm}
+
+We begin by running the code for generating the data that we will work with. 
+\vspace{5mm}
+```{r}
+library(knapsack)
+library(bench)
+library(tidyverse)
+
+set.seed(42)
+n <- 2000
+knapsack_objects <- data.frame(w = sample(1:4000, size = n, replace = TRUE),
+                               v = runif(n = n, 0, 10000))
+```
+\vspace{5mm}
+
+\normalsize
+**Brute force search**
+
+\vspace{5mm}
+Below is our code for **brute_force_knapsack()**. We have implemented the function using **intToBits()**. It is important to note that because of the limitations of **intToBits()** we cannot choose arbitrarily large subsets.
+\vspace{5mm}
+
+```{r}
+brute_force_knapsack<-function(x,W){
+  if(!(is.data.frame(x)&ncol(x)==2&all(x>0))) stop("Incorrect input.")
+  S<-c()
+  L<-list()
+  for (i in 1:(2^nrow(x))){
+    if (sum(x[as.logical(intToBits(i-1)),][,1])>W) S[i]<-0
+    else S[i]<-sum(x[as.logical(intToBits(i-1)),][,2])
+    L[[i]]<-as.numeric(rownames(x[as.logical(intToBits(i-1)),]))
+    L[[i]]<-as.numeric(rownames(x[as.logical(intToBits(i-1)),]))
+  }
+  list(value=max(S), elements=L[[which.max(S)]])
+}
+```
+\vspace{1cm}
+```{r}
+brute_force_knapsack(x = knapsack_objects[1: 8,], W = 3500)
+brute_force_knapsack(x = knapsack_objects[1:12,], W = 3500)
+brute_force_knapsack(x = knapsack_objects[1:8,], W = 2000)
+brute_force_knapsack(x = knapsack_objects[1:12,], W = 2000)
+```
+\vspace{1cm}
+When trying the function for $n=16,$ we obtain the following results with **system.time()**:
+\vspace{1cm}
+```{r eval=FALSE}
+bruteforce_st1<-system.time(brute_force_knapsack(x = knapsack_objects[1:16,], W = 3500))
+bruteforce_st2<-system.time(brute_force_knapsack(x = knapsack_objects[1:16,], W = 2000))
+```
+```{r}
+data("bruteforce_st1")
+bruteforce_st1
+data("bruteforce_st2")
+bruteforce_st2
+```
+
+\vspace{2cm}
+
+**Greedy heuristic**
+
+\vspace{5mm}
+Following the example provided in the instructions, we obtain the following code for **greedy_knapsack().**
+\vspace{5mm}
+```{r}
+greedy_knapsack<-function(x,W){
+  if(!(is.data.frame(x)&ncol(x)==2&all(x>0))) stop("Incorrect input.")
+  x[,3]<-x[,2]/x[,1]
+  x<-x[order(x[,3], decreasing=TRUE),]
+  S<-0
+  L<-c()
+  s_w<-0
+  for(i in 1:nrow(x)){
+    if (s_w+x[i,1]<=W) {
+      s_w<-s_w+x[i,1]
+      S<-S+x[i,2]
+      L<-c(L, as.numeric(rownames(x[i,])))
+    }
+  }
+  list(value=S, elements=L)
+}
+```
+\vspace{1cm}
+```{r}
+greedy_knapsack(x = knapsack_objects[1:800,], W = 3500)
+greedy_knapsack(x = knapsack_objects[1:1200,], W = 2000)
+```
+\vspace{1cm}
+When trying the function for $n=1000000,$ we obtain the following results with **system.time()**:
+\vspace{1cm}
+```{r eval=FALSE}
+set.seed(42)
+n2 <- 1000000
+knapsack_objects2 <- data.frame(w = sample(1:4000, size = n2, replace = TRUE),
+                               v <- runif(n = n2, 0, 10000))
+
+greedy_st1<-system.time(greedy_knapsack(x = knapsack_objects2, W = 3500))
+greedy_st2<-system.time(greedy_knapsack(x = knapsack_objects2, W = 2000))
+```
+```{r}
+data("greedy_st1")
+greedy_st1
+data("greedy_st2")
+greedy_st2
+```
+
+\vspace{2cm}
+**Profiling and Optimization**
+
+\vspace{5mm}
+Using the package **profvis** we identified two bottlenecks for **brute_force_knapsack** and **greedy_knapsack** respectively; both arising inside for loops. We have tried our best to find alternative code that is more efficient. For **brute_force_knapsack** we replaced the for loop by using **sapply()** and **colSums()** (as suggested in Lecture 7). The alternative for **brute_force_knapsack** is given below:
+\vspace{5mm}
+```{r}
+newbruteforce<-function(x,W){
+ if(!(is.data.frame(x)&ncol(x)==2&all(x>0))) stop("Incorrect input.")
+  y<-sapply(0:(2^(nrow(x))-1), function(k) {
+     colSums(x[as.logical(intToBits(k)),])})
+  y<-cbind(t(y),1:nrow(t(y)))
+  y<-subset(y, y[,1]<=W)
+  list(value=max(y[,2]),
+       elements= as.numeric(rownames(x[as.logical(intToBits(y[which.max(y[,2]),3]-1)),])))
+}
+```
+\vspace{5mm}
+By using the **mark()** function from the **bench** package we can analyze performance differences between the two functions. We used the following code with 1000 iterations in order to make a comparison. The results are provided below (for the benchmark, **brute_force_knapsack** corresponds with the first row, and **newbruteforce** with the second). It seems like **newbruteforce** is generally faster than **brute_force_knapsack**.
+
+\vspace{5mm}
+```{r eval=FALSE}
+bruteforcebench<-bench::mark(brute_force_knapsack(x = knapsack_objects[1:8,], W = 3500),
+            newbruteforce(x = knapsack_objects[1:8,], W = 3500), iterations=1000)
+```
+```{r}
+data("bruteforcebench")
+bruteforcebench[,-1]
+```
+
+\vspace{5mm}
+For **greedy_knapsack()** we were able to adapt the code so that the function implements the for loop while treating the data frame as a matrix. The code is the following one:
+\vspace{5mm}
+```{r}
+newgreedy<-function(x,W){
+  x<-as.matrix(x)
+  x<-cbind(x,x[,2]/x[,1],1:nrow(x))
+  x<-x[order(x[,3], decreasing=TRUE),]
+  S<-0
+  L<-c()
+  s_w<-0
+  for(i in 1:nrow(x)){
+    if (s_w+x[i,1]<=W) {
+      s_w<-s_w+x[i,1]
+      S<-S+x[i,2]
+      L<-c(L,x[i,4])
+    }
+  }
+  list(value=S, elements=L)
+}
+```
+\vspace{5mm}
+We compared **greedy_knapsack** and **newgreedy** using **mark()** (1000 iterations). Here the result seems staggering. **newgreedy** seemed to vastly outperform **greedy_knapsack** in execution time. The code that was used is the one below (for the benchmark, **greedy_knapsack** corresponds with the first row, and **newgreedy** with the second):
+\vspace{5mm}
+```{r eval=FALSE}
+greedybench<-bench::mark(greedy_knapsack(x = knapsack_objects[1:800,], W = 3500),
+                         newgreedy(x = knapsack_objects[1:800,], W = 3500), iterations=1000)
+```
+```{r}
+data(greedybench)
+greedybench[,-1]
+```
+
+\vspace{5mm}
+In our package, both **brute_force_knapsack** and **greedy_knapsack** are implemented using the new code. 
